@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { isAdminSession } from "@/lib/admin-auth";
-import { deleteProductImage, uploadProductImage } from "@/lib/storage";
+import { createSignedUploadUrl, deleteProductImage } from "@/lib/storage";
 import {
   addProduct,
   getProduct,
@@ -22,25 +22,36 @@ const MIME_EXTENSIONS: Record<string, string> = {
   "image/gif": ".gif",
 };
 
-function validateImageFiles(files: File[]): string | undefined {
-  for (const file of files) {
-    if (!MIME_EXTENSIONS[file.type]) {
-      return `Tipo de archivo no admitido: ${file.type || "desconocido"}.`;
-    }
-    if (file.size > MAX_IMAGE_SIZE) {
-      return "Una imagen es demasiado grande (máximo 5 MB).";
-    }
+export type RequestImageUploadResult =
+  | { error: string }
+  | { signedUrl: string; publicUrl: string };
+
+// Called directly from the browser (not as a form action) before uploading a file,
+// so the image bytes go straight from the browser to Supabase Storage instead of
+// through this serverless function (which has a small body-size limit on Netlify).
+export async function requestImageUploadUrl(
+  contentType: string,
+  size: number,
+): Promise<RequestImageUploadResult> {
+  if (!(await isAdminSession())) {
+    return { error: "Debes haber iniciado sesión como administrador." };
   }
-  return undefined;
+
+  const ext = MIME_EXTENSIONS[contentType];
+  if (!ext) {
+    return { error: `Tipo de archivo no admitido: ${contentType || "desconocido"}.` };
+  }
+  if (size > MAX_IMAGE_SIZE) {
+    return { error: "Una imagen es demasiado grande (máximo 5 MB)." };
+  }
+
+  const filename = `${randomUUID()}${ext}`;
+  return createSignedUploadUrl(filename);
 }
 
-async function saveImageFiles(files: File[]): Promise<string[]> {
-  const images: string[] = [];
-  for (const file of files) {
-    const filename = `${randomUUID()}${MIME_EXTENSIONS[file.type]}`;
-    images.push(await uploadProductImage(file, filename));
-  }
-  return images;
+export async function discardUploadedImage(publicUrl: string): Promise<void> {
+  if (!(await isAdminSession())) return;
+  await deleteProductImage(publicUrl).catch(() => undefined);
 }
 
 export type CreateProductState = { error?: string } | undefined;
@@ -56,9 +67,9 @@ export async function createProduct(
   const title = formData.get("title");
   const priceRaw = formData.get("price");
   const description = formData.get("description");
-  const files = formData
-    .getAll("images")
-    .filter((value): value is File => value instanceof File && value.size > 0);
+  const images = formData
+    .getAll("imageUrls")
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
 
   if (typeof title !== "string" || title.trim().length === 0) {
     return { error: "El título es obligatorio." };
@@ -72,11 +83,6 @@ export async function createProduct(
   if (typeof description !== "string" || description.trim().length === 0) {
     return { error: "La descripción es obligatoria." };
   }
-
-  const fileError = validateImageFiles(files);
-  if (fileError) return { error: fileError };
-
-  const images = await saveImageFiles(files);
 
   const product: Product = {
     id: randomUUID(),
@@ -113,9 +119,9 @@ export async function updateProduct(
   const priceRaw = formData.get("price");
   const description = formData.get("description");
   const keepImages = new Set(formData.getAll("keepImages").filter((v): v is string => typeof v === "string"));
-  const newFiles = formData
-    .getAll("images")
-    .filter((value): value is File => value instanceof File && value.size > 0);
+  const newImages = formData
+    .getAll("imageUrls")
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
 
   if (typeof title !== "string" || title.trim().length === 0) {
     return { error: "El título es obligatorio." };
@@ -130,11 +136,7 @@ export async function updateProduct(
     return { error: "La descripción es obligatoria." };
   }
 
-  const fileError = validateImageFiles(newFiles);
-  if (fileError) return { error: fileError };
-
   const removedImages = product.images.filter((image) => !keepImages.has(image));
-  const newImages = await saveImageFiles(newFiles);
   const images = [...product.images.filter((image) => keepImages.has(image)), ...newImages];
 
   await updateProductInStore(productId, {

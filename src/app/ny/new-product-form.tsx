@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { createProduct } from "../actions";
+import { ImageUploader } from "../image-uploader";
 
 const initialState = undefined;
 
@@ -53,13 +54,7 @@ export function NewProductForm() {
 
       <label className="flex flex-col gap-1.5">
         <span className="text-sm font-medium">Galería de imágenes</span>
-        <input
-          name="images"
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          multiple
-          className="rounded-lg border border-black/[.08] bg-transparent px-3 py-2 text-sm outline-none focus:border-foreground dark:border-white/[.145]"
-        />
+        <ImageUploader fieldName="imageUrls" />
       </label>
 
       <button

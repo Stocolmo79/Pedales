@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import Image from "next/image";
 import { updateProduct } from "../../actions";
+import { ImageUploader } from "../../image-uploader";
 import type { Product } from "@/lib/products";
 
 export function EditProductForm({ product }: { product: Product }) {
@@ -98,13 +99,7 @@ export function EditProductForm({ product }: { product: Product }) {
 
       <label className="flex flex-col gap-1.5">
         <span className="text-sm font-medium">Añadir más imágenes</span>
-        <input
-          name="images"
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          multiple
-          className="rounded-lg border border-black/[.08] bg-transparent px-3 py-2 text-sm outline-none focus:border-foreground dark:border-white/[.145]"
-        />
+        <ImageUploader fieldName="imageUrls" />
       </label>
 
       <button
