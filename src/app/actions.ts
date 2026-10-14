@@ -1,11 +1,10 @@
 "use server";
 
 import { randomUUID } from "crypto";
-import { mkdir, unlink, writeFile } from "fs/promises";
-import path from "path";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { isAdminSession } from "@/lib/admin-auth";
+import { deleteProductImage, uploadProductImage } from "@/lib/storage";
 import {
   addProduct,
   getProduct,
@@ -36,15 +35,10 @@ function validateImageFiles(files: File[]): string | undefined {
 }
 
 async function saveImageFiles(files: File[]): Promise<string[]> {
-  const uploadsDir = path.join(process.cwd(), "public", "uploads");
-  await mkdir(uploadsDir, { recursive: true });
-
   const images: string[] = [];
   for (const file of files) {
     const filename = `${randomUUID()}${MIME_EXTENSIONS[file.type]}`;
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(path.join(uploadsDir, filename), buffer);
-    images.push(`/uploads/${filename}`);
+    images.push(await uploadProductImage(file, filename));
   }
   return images;
 }
@@ -151,7 +145,7 @@ export async function updateProduct(
   });
 
   for (const image of removedImages) {
-    await unlink(path.join(process.cwd(), "public", image)).catch(() => undefined);
+    await deleteProductImage(image).catch(() => undefined);
   }
 
   revalidatePath("/");

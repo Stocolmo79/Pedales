@@ -1,5 +1,4 @@
-import { promises as fs } from "fs";
-import path from "path";
+import { getSupabaseAdminClient } from "./supabase";
 
 export type Reservation = {
   name: string;
@@ -16,63 +15,100 @@ export type Product = {
   reservedBy: Reservation | null;
 };
 
-const dataDir = path.join(process.cwd(), "data");
-const dataFile = path.join(dataDir, "products.json");
+type ProductRow = {
+  id: string;
+  title: string;
+  price: number;
+  description: string;
+  images: string[] | null;
+  reserved_name: string | null;
+  reserved_email: string | null;
+  reserved_at: string | null;
+};
 
-async function ensureDataFile() {
-  await fs.mkdir(dataDir, { recursive: true });
-  try {
-    await fs.access(dataFile);
-  } catch {
-    await fs.writeFile(dataFile, "[]", "utf8");
-  }
-}
-
-async function writeProducts(products: Product[]): Promise<void> {
-  await ensureDataFile();
-  await fs.writeFile(dataFile, JSON.stringify(products, null, 2), "utf8");
+function fromRow(row: ProductRow): Product {
+  return {
+    id: row.id,
+    title: row.title,
+    price: row.price,
+    description: row.description,
+    images: row.images ?? [],
+    reservedBy:
+      row.reserved_name && row.reserved_email && row.reserved_at
+        ? { name: row.reserved_name, email: row.reserved_email, reservedAt: row.reserved_at }
+        : null,
+  };
 }
 
 export async function getProducts(): Promise<Product[]> {
-  await ensureDataFile();
-  const raw = await fs.readFile(dataFile, "utf8");
-  return JSON.parse(raw) as Product[];
+  const { data, error } = await getSupabaseAdminClient()
+    .from("products")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+
+  return (data ?? []).map(fromRow);
 }
 
 export async function getProduct(id: string): Promise<Product | undefined> {
-  const products = await getProducts();
-  return products.find((product) => product.id === id);
+  const { data, error } = await getSupabaseAdminClient()
+    .from("products")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+
+  return data ? fromRow(data) : undefined;
 }
 
 export async function addProduct(product: Product): Promise<void> {
-  const products = await getProducts();
-  products.push(product);
-  await writeProducts(products);
+  const { error } = await getSupabaseAdminClient().from("products").insert({
+    id: product.id,
+    title: product.title,
+    price: product.price,
+    description: product.description,
+    images: product.images,
+  });
+  if (error) throw new Error(error.message);
 }
 
 export async function updateProduct(
   id: string,
   updates: Pick<Product, "title" | "price" | "description" | "images">,
 ): Promise<Product | undefined> {
-  const products = await getProducts();
-  const index = products.findIndex((product) => product.id === id);
-  if (index === -1) return undefined;
+  const { data, error } = await getSupabaseAdminClient()
+    .from("products")
+    .update({
+      title: updates.title,
+      price: updates.price,
+      description: updates.description,
+      images: updates.images,
+    })
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
 
-  products[index] = { ...products[index], ...updates };
-  await writeProducts(products);
-  return products[index];
+  return data ? fromRow(data) : undefined;
 }
 
 export async function setReservation(
   id: string,
   reservation: Reservation | null,
 ): Promise<Product | undefined> {
-  const products = await getProducts();
-  const index = products.findIndex((product) => product.id === id);
-  if (index === -1) return undefined;
+  const { data, error } = await getSupabaseAdminClient()
+    .from("products")
+    .update({
+      reserved_name: reservation?.name ?? null,
+      reserved_email: reservation?.email ?? null,
+      reserved_at: reservation?.reservedAt ?? null,
+    })
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
 
-  products[index] = { ...products[index], reservedBy: reservation };
-  await writeProducts(products);
-  return products[index];
+  return data ? fromRow(data) : undefined;
 }
+
 
