@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { isAdminSession } from "@/lib/admin-auth";
 import { createSignedUploadUrl, deleteProductImage } from "@/lib/storage";
+import { sendEmail } from "@/lib/email";
 import {
   addProduct,
   getProduct,
@@ -183,11 +184,30 @@ export async function reserveProduct(
     return { error: "El producto ya está reservado." };
   }
 
+  const trimmedName = name.trim();
+  const trimmedEmail = email.trim();
+
   await setReservation(productId, {
-    name: name.trim(),
-    email: email.trim(),
+    name: trimmedName,
+    email: trimmedEmail,
     reservedAt: new Date().toISOString(),
   });
+
+  const adminEmail = process.env.ADMIN_EMAIL;
+  await Promise.allSettled([
+    adminEmail
+      ? sendEmail({
+          to: adminEmail,
+          subject: `Nueva reserva: ${product.title}`,
+          html: `<p><strong>${trimmedName}</strong> (${trimmedEmail}) ha reservado <strong>${product.title}</strong> ($${product.price}).</p>`,
+        })
+      : Promise.resolve(),
+    sendEmail({
+      to: trimmedEmail,
+      subject: `Reserva confirmada: ${product.title}`,
+      html: `<p>Hola ${trimmedName},</p><p>Has reservado <strong>${product.title}</strong> ($${product.price}). Nos pondremos en contacto contigo pronto.</p>`,
+    }),
+  ]);
 
   revalidatePath("/");
 }
