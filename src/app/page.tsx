@@ -9,6 +9,9 @@ import { WaitlistForm } from "./waitlist-form";
 export default function Home() {
   return (
     <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-12 sm:px-8">
+      <p className="mb-8 rounded-lg bg-accent/10 px-4 py-3 text-center text-sm font-medium text-accent">
+        Estos productos estarán disponibles en Chile a partir del 15 de diciembre. Se atiende por orden de reservación.
+      </p>
       <Suspense fallback={<p className="text-zinc-500">Cargando productos…</p>}>
         <ProductsSection />
       </Suspense>
