@@ -17,6 +17,10 @@
 /.next/
 /out/
 
+# product data and uploaded images (generated at runtime)
+/data/
+/public/uploads/
+
 # production
 /build
 
