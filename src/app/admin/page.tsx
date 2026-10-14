@@ -68,6 +68,19 @@ async function AdminContent() {
                 {product.reservedBy &&
                   new Date(product.reservedBy.reservedAt).toLocaleString("es-ES")}
               </p>
+              {product.waitlist.length > 0 && (
+                <div className="mt-3 rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-900">
+                  <p className="font-medium">Lista de espera ({product.waitlist.length})</p>
+                  <ul className="mt-1 flex flex-col gap-1">
+                    {product.waitlist.map((entry) => (
+                      <li key={entry.email} className="text-xs text-zinc-500">
+                        {entry.name} ({entry.email}) ·{" "}
+                        {new Date(entry.joinedAt).toLocaleString("es-ES")}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <form action={clearReservation} className="mt-3">
                 <input type="hidden" name="id" value={product.id} />
                 <button

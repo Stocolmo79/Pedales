@@ -6,6 +6,12 @@ export type Reservation = {
   reservedAt: string;
 };
 
+export type WaitlistEntry = {
+  name: string;
+  email: string;
+  joinedAt: string;
+};
+
 export type Product = {
   id: string;
   title: string;
@@ -13,6 +19,7 @@ export type Product = {
   description: string;
   images: string[];
   reservedBy: Reservation | null;
+  waitlist: WaitlistEntry[];
 };
 
 type ProductRow = {
@@ -24,6 +31,7 @@ type ProductRow = {
   reserved_name: string | null;
   reserved_email: string | null;
   reserved_at: string | null;
+  waitlist: { name: string; email: string; joined_at: string }[] | null;
 };
 
 function fromRow(row: ProductRow): Product {
@@ -37,6 +45,11 @@ function fromRow(row: ProductRow): Product {
       row.reserved_name && row.reserved_email && row.reserved_at
         ? { name: row.reserved_name, email: row.reserved_email, reservedAt: row.reserved_at }
         : null,
+    waitlist: (row.waitlist ?? []).map((entry) => ({
+      name: entry.name,
+      email: entry.email,
+      joinedAt: entry.joined_at,
+    })),
   };
 }
 
@@ -103,6 +116,29 @@ export async function setReservation(
       reserved_email: reservation?.email ?? null,
       reserved_at: reservation?.reservedAt ?? null,
     })
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+
+  return data ? fromRow(data) : undefined;
+}
+
+export async function addToWaitlist(
+  id: string,
+  entry: WaitlistEntry,
+): Promise<Product | undefined> {
+  const product = await getProduct(id);
+  if (!product) return undefined;
+
+  const waitlist = [
+    ...product.waitlist,
+    { name: entry.name, email: entry.email, joined_at: entry.joinedAt },
+  ];
+
+  const { data, error } = await getSupabaseAdminClient()
+    .from("products")
+    .update({ waitlist })
     .eq("id", id)
     .select("*")
     .maybeSingle();

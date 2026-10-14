@@ -4,6 +4,7 @@ import { isAdminSession } from "@/lib/admin-auth";
 import { getProducts } from "@/lib/products";
 import { ProductGallery } from "./product-gallery";
 import { ReserveForm } from "./reserve-form";
+import { WaitlistForm } from "./waitlist-form";
 
 export default function Home() {
   return (
@@ -61,7 +62,11 @@ async function ProductsSection() {
                 <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-400">
                   {product.description}
                 </p>
-                {!product.reservedBy && <ReserveForm productId={product.id} />}
+                {!product.reservedBy ? (
+                  <ReserveForm productId={product.id} />
+                ) : (
+                  <WaitlistForm productId={product.id} />
+                )}
                 {isAdmin && (
                   <Link
                     href={`/${product.id}/redigera`}

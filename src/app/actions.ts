@@ -10,6 +10,7 @@ import {
   getProduct,
   getProducts,
   setReservation,
+  addToWaitlist,
   updateProduct as updateProductInStore,
   type Product,
 } from "@/lib/products";
@@ -189,4 +190,42 @@ export async function reserveProduct(
   });
 
   revalidatePath("/");
+}
+
+export type JoinWaitlistState = { error?: string; success?: boolean } | undefined;
+
+export async function joinWaitlist(
+  productId: string,
+  _prevState: JoinWaitlistState,
+  formData: FormData,
+): Promise<JoinWaitlistState> {
+  const name = formData.get("name");
+  const email = formData.get("email");
+
+  if (typeof name !== "string" || name.trim().length === 0) {
+    return { error: "El nombre es obligatorio." };
+  }
+  if (typeof email !== "string" || !EMAIL_PATTERN.test(email.trim())) {
+    return { error: "Introduce un correo electrónico válido." };
+  }
+
+  const product = await getProduct(productId);
+  if (!product) {
+    return { error: "El producto ya no existe." };
+  }
+  if (!product.reservedBy) {
+    return { error: "Este producto no está reservado, puedes reservarlo directamente." };
+  }
+  if (product.waitlist.some((entry) => entry.email.toLowerCase() === email.trim().toLowerCase())) {
+    return { error: "Ya estás en la lista de espera de este producto." };
+  }
+
+  await addToWaitlist(productId, {
+    name: name.trim(),
+    email: email.trim(),
+    joinedAt: new Date().toISOString(),
+  });
+
+  revalidatePath("/");
+  return { success: true };
 }
