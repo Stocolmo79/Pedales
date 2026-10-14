@@ -93,6 +93,7 @@ export async function createProduct(
     description: description.trim(),
     images,
     reservedBy: null,
+    waitlist: [],
   };
 
   await addProduct(product);
