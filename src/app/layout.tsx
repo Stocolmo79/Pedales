@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Gestión de productos",
-  description: "Gestiona productos con título, precio, descripción y galería de imágenes",
+  title: "Venta pedales",
+  description: "Venta pedales",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
