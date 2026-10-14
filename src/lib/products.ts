@@ -147,4 +147,37 @@ export async function addToWaitlist(
   return data ? fromRow(data) : undefined;
 }
 
+// Reorders products by swapping their created_at, since that's what getProducts sorts by.
+// "up"/"down" refer to the reversed (newest-first) list order shown on the page.
+export async function moveProduct(id: string, direction: "up" | "down"): Promise<void> {
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client
+    .from("products")
+    .select("id, created_at")
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+
+  const rows = data ?? [];
+  const index = rows.findIndex((row) => row.id === id);
+  if (index === -1) return;
+
+  const swapIndex = direction === "up" ? index + 1 : index - 1;
+  if (swapIndex < 0 || swapIndex >= rows.length) return;
+
+  const current = rows[index];
+  const swapWith = rows[swapIndex];
+
+  const { error: error1 } = await client
+    .from("products")
+    .update({ created_at: swapWith.created_at })
+    .eq("id", current.id);
+  if (error1) throw new Error(error1.message);
+
+  const { error: error2 } = await client
+    .from("products")
+    .update({ created_at: current.created_at })
+    .eq("id", swapWith.id);
+  if (error2) throw new Error(error2.message);
+}
+
 

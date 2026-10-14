@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { isAdminSession } from "@/lib/admin-auth";
 import { getProducts } from "@/lib/products";
 import { ProductGallery } from "./product-gallery";
+import { ProductOrderButtons } from "./product-order-buttons";
 import { ReserveForm } from "./reserve-form";
 import { WaitlistForm } from "./waitlist-form";
 
@@ -47,7 +48,7 @@ async function ProductsSection() {
           {products
             .slice()
             .reverse()
-            .map((product) => (
+            .map((product, index, reversedProducts) => (
               <li key={product.id} className="card p-5 sm:p-6">
                 <ProductGallery images={product.images} title={product.title} />
                 <div className="mt-4 flex items-start justify-between gap-4">
@@ -55,12 +56,21 @@ async function ProductsSection() {
                     <h2 className="text-xl font-semibold tracking-tight">{product.title}</h2>
                     <p className="mt-1 text-lg font-semibold text-accent">${product.price}</p>
                   </div>
-                  {product.reservedBy && (
-                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                      Reservado
-                    </span>
-                  )}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {isAdmin && (
+                      <ProductOrderButtons
+                        productId={product.id}
+                        isFirst={index === 0}
+                        isLast={index === reversedProducts.length - 1}
+                      />
+                    )}
+                    {product.reservedBy && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                        Reservado
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-400">
                   {product.description}

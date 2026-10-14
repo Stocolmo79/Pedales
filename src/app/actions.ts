@@ -12,6 +12,7 @@ import {
   getProducts,
   setReservation,
   addToWaitlist,
+  moveProduct,
   updateProduct as updateProductInStore,
   type Product,
 } from "@/lib/products";
@@ -249,4 +250,14 @@ export async function joinWaitlist(
 
   revalidatePath("/");
   return { success: true };
+}
+
+export async function moveProductOrder(
+  productId: string,
+  direction: "up" | "down",
+): Promise<void> {
+  if (!(await isAdminSession())) return;
+
+  await moveProduct(productId, direction);
+  revalidatePath("/");
 }
