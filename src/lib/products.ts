@@ -1,134 +1,91 @@
-// Products are stored as one JSON document in a PRIVATE R2 bucket (contains customer names/emails).
-import { GetObjectCommand, PutObjectCommand, S3ServiceException } from "@aws-sdk/client-s3";
-import { getS3Client } from "./storage";
+// One-off: copies product images from Supabase Storage to R2 and rewrites the URLs in the products table.
+// Usage: node --env-file=.env.local scripts/migrate-images-to-r2.mjs [--dry-run]
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
-export type Reservation = {
-  name: string;
-  email: string;
-  reservedAt: string;
+const dryRun = process.argv.includes("--dry-run");
+const bucket = process.env.S3_BUCKET ?? "product-images";
+const publicBase = process.env.S3_PUBLIC_URL_BASE.replace(/\/$/, "");
+
+// Plain REST instead of supabase-js, which requires Node 22+ (native WebSocket).
+const restUrl = `${process.env.SUPABASE_URL.replace(/\/$/, "")}/rest/v1/products`;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseHeaders = {
+  apikey: supabaseKey,
+  Authorization: `Bearer ${supabaseKey}`,
+  "Content-Type": "application/json",
 };
 
-export type WaitlistEntry = {
-  name: string;
-  email: string;
-  joinedAt: string;
-};
+const s3 = new S3Client({
+  endpoint: process.env.S3_ENDPOINT,
+  region: process.env.S3_REGION ?? "auto",
+  forcePathStyle: true,
+  credentials: {
+    accessKeyId: process.env.S3_ACCESS_KEY_ID,
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+  },
+});
 
-export type Product = {
-  id: string;
-  title: string;
-  price: number;
-  description: string;
-  images: string[];
-  reservedBy: Reservation | null;
-  waitlist: WaitlistEntry[];
-};
+const SUPABASE_MARKER = "/storage/v1/object/public/";
 
-const DATA_BUCKET = process.env.S3_DATA_BUCKET ?? "product-data";
-const KEY = "products.json";
+const listRes = await fetch(`${restUrl}?select=id,title,images`, { headers: supabaseHeaders });
+if (!listRes.ok) throw new Error(`Supabase ${listRes.status}: ${await listRes.text()}`);
+const products = await listRes.json();
 
-async function load(): Promise<{ products: Product[]; etag: string | undefined }> {
-  try {
-    const res = await getS3Client().send(new GetObjectCommand({ Bucket: DATA_BUCKET, Key: KEY }));
-    const text = (await res.Body?.transformToString()) ?? "[]";
-    return { products: JSON.parse(text) as Product[], etag: res.ETag };
-  } catch (err) {
-    if (err instanceof S3ServiceException && err.name === "NoSuchKey") {
-      return { products: [], etag: undefined };
+let copied = 0;
+let failed = 0;
+
+for (const product of products) {
+  const images = product.images ?? [];
+  const newImages = [];
+  let changed = false;
+
+  for (const url of images) {
+    const index = url.indexOf(SUPABASE_MARKER);
+    if (url.startsWith(publicBase) || index === -1) {
+      if (!url.startsWith(publicBase)) console.warn(`  ? okänd källa, lämnas orörd: ${url}`);
+      newImages.push(url);
+      continue;
     }
-    throw err;
-  }
-}
 
-// Read-modify-write with an ETag precondition so concurrent writes (e.g. two reservations) aren't lost.
-async function mutate<T>(change: (products: Product[]) => T): Promise<T> {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const { products, etag } = await load();
-    const result = change(products);
+    // Path after "<bucket>/" in the Supabase URL becomes the R2 key.
+    const objectPath = url.slice(index + SUPABASE_MARKER.length);
+    const key = objectPath.slice(objectPath.indexOf("/") + 1);
+    const newUrl = `${publicBase}/${key}`;
+
     try {
-      await getS3Client().send(
-        new PutObjectCommand({
-          Bucket: DATA_BUCKET,
-          Key: KEY,
-          Body: JSON.stringify(products, null, 2),
-          ContentType: "application/json",
-          ...(etag ? { IfMatch: etag } : { IfNoneMatch: "*" }),
-        }),
-      );
-      return result;
+      if (!dryRun) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        await s3.send(
+          new PutObjectCommand({
+            Bucket: bucket,
+            Key: key,
+            Body: Buffer.from(await res.arrayBuffer()),
+            ContentType: res.headers.get("content-type") ?? "application/octet-stream",
+            CacheControl: "public, max-age=31536000, immutable",
+          }),
+        );
+      }
+      console.log(`  ✓ ${key}`);
+      newImages.push(newUrl);
+      changed = true;
+      copied++;
     } catch (err) {
-      if (err instanceof S3ServiceException && err.$metadata.httpStatusCode === 412) continue;
-      throw err;
+      console.error(`  ✗ ${url}: ${err.message}`);
+      newImages.push(url);
+      failed++;
     }
   }
-  throw new Error("No se pudo guardar el producto. Inténtalo de nuevo.");
+
+  if (changed && !dryRun) {
+    const updateRes = await fetch(`${restUrl}?id=eq.${encodeURIComponent(product.id)}`, {
+      method: "PATCH",
+      headers: supabaseHeaders,
+      body: JSON.stringify({ images: newImages }),
+    });
+    if (!updateRes.ok) throw new Error(`${product.title}: ${updateRes.status} ${await updateRes.text()}`);
+  }
+  if (changed) console.log(`${dryRun ? "[dry-run] " : ""}${product.title}: ${newImages.length} bilder`);
 }
 
-function normalize(product: Product): Product {
-  return { ...product, images: product.images ?? [], reservedBy: product.reservedBy ?? null, waitlist: product.waitlist ?? [] };
-}
-
-export async function getProducts(): Promise<Product[]> {
-  const { products } = await load();
-  return products.map(normalize);
-}
-
-export async function getProduct(id: string): Promise<Product | undefined> {
-  const product = (await getProducts()).find((p) => p.id === id);
-  return product;
-}
-
-export async function addProduct(product: Product): Promise<void> {
-  await mutate((products) => {
-    products.push(normalize(product));
-  });
-}
-
-export async function updateProduct(
-  id: string,
-  updates: Pick<Product, "title" | "price" | "description" | "images">,
-): Promise<Product | undefined> {
-  return mutate((products) => {
-    const product = products.find((p) => p.id === id);
-    if (!product) return undefined;
-    Object.assign(product, updates);
-    return normalize(product);
-  });
-}
-
-export async function setReservation(
-  id: string,
-  reservation: Reservation | null,
-): Promise<Product | undefined> {
-  return mutate((products) => {
-    const product = products.find((p) => p.id === id);
-    if (!product) return undefined;
-    product.reservedBy = reservation;
-    return normalize(product);
-  });
-}
-
-export async function addToWaitlist(
-  id: string,
-  entry: WaitlistEntry,
-): Promise<Product | undefined> {
-  return mutate((products) => {
-    const product = products.find((p) => p.id === id);
-    if (!product) return undefined;
-    product.waitlist = [...(product.waitlist ?? []), entry];
-    return normalize(product);
-  });
-}
-
-// "up"/"down" refer to the reversed (newest-first) list order shown on the page.
-export async function moveProduct(id: string, direction: "up" | "down"): Promise<void> {
-  await mutate((products) => {
-    const index = products.findIndex((p) => p.id === id);
-    if (index === -1) return;
-
-    const swapIndex = direction === "up" ? index + 1 : index - 1;
-    if (swapIndex < 0 || swapIndex >= products.length) return;
-
-    [products[index], products[swapIndex]] = [products[swapIndex], products[index]];
-  });
-}
+console.log(`\nKlart. Kopierade: ${copied}, misslyckade: ${failed}${dryRun ? " (dry-run, inget ändrat)" : ""}`);
