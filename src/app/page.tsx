@@ -1,7 +1,11 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { Suspense } from "react";
 import { isAdminSession } from "@/lib/admin-auth";
+import { LIKED_COOKIE, parseLikedCookie } from "@/lib/liked-cookie";
 import { getProducts } from "@/lib/products";
+import { getStats } from "@/lib/stats";
+import { ProductEngagement } from "./product-engagement";
 import { ProductGallery } from "./product-gallery";
 import { ProductOrderButtons } from "./product-order-buttons";
 import { ReserveForm } from "./reserve-form";
@@ -29,7 +33,11 @@ export default function Home() {
 }
 
 async function ProductsSection() {
-  const [isAdmin, products] = await Promise.all([isAdminSession(), getProducts()]);
+  const [isAdmin, products, stats, cookieStore] = await Promise.all([
+    isAdminSession(), 
+    getProducts(),
+    getStats().catch(() => ({})),
+    cookies(),]);
 
   return (
     <>
@@ -75,6 +83,11 @@ async function ProductsSection() {
                 <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-400">
                   {product.description}
                 </p>
+                 <ProductEngagement
+                  productId={product.id}
+                  initialStats={stats[product.id] ?? { likes: 0, views: 0 }}
+                  initialLiked={likedIds.has(product.id)}
+                />
                 {!product.reservedBy ? (
                   <ReserveForm productId={product.id} />
                 ) : (
