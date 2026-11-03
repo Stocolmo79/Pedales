@@ -2,18 +2,21 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { isAdminSession } from "@/lib/admin-auth";
+import { CATEGORIES, isCategory, type Category } from "@/lib/categories";
 import { getProducts } from "@/lib/products";
 import { getStats } from "@/lib/stats";
 import { ProductOrderButtons } from "./product-order-buttons";
 
-export default function Home() {
+type SearchParams = Promise<{ categoria?: string | string[] }>;
+
+export default function Home({ searchParams }: { searchParams: SearchParams }) {
   return (
     <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-12 sm:px-8">
       <p className="mb-8 rounded-lg bg-accent/10 px-4 py-3 text-center text-sm font-medium text-accent">
         Estos productos estarán disponibles en Chile a partir del 15 de diciembre. Se atiende por orden de reservación.
       </p>
       <Suspense fallback={<p className="text-zinc-500">Cargando productos…</p>}>
-        <ProductsSection />
+        <ProductsSection searchParams={searchParams} />
       </Suspense>
       <div className="mt-12 text-center">
         <Link
@@ -27,12 +30,23 @@ export default function Home() {
   );
 }
 
-async function ProductsSection() {
-  const [isAdmin, products, stats] = await Promise.all([
+async function ProductsSection({ searchParams }: { searchParams: SearchParams }) {
+  const [isAdmin, allProducts, stats, { categoria }] = await Promise.all([
     isAdminSession(),
     getProducts(),
     getStats().catch((): Awaited<ReturnType<typeof getStats>> => ({})),
+    searchParams,
   ]);
+  const category: Category | undefined = isCategory(categoria) ? categoria : undefined;
+  const products = category ? allProducts.filter((p) => p.category === category) : allProducts;
+  const filters: { href: string; label: string; active: boolean }[] = [
+    { href: "/", label: "Todos", active: !category },
+    ...Object.entries(CATEGORIES).map(([value, label]) => ({
+      href: `/?categoria=${value}`,
+      label,
+      active: category === value,
+    })),
+  ];
 
   return (
     <>
@@ -44,6 +58,22 @@ async function ProductsSection() {
           </p>
         </div>
       </div>
+      <nav aria-label="Categorías" className="-mt-4 mb-8 flex flex-wrap gap-2">
+        {filters.map((filter) => (
+          <Link
+            key={filter.href}
+            href={filter.href}
+            aria-current={filter.active ? "page" : undefined}
+            className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${
+              filter.active
+                ? "border-accent bg-accent text-white"
+                : "border-black/[.08] text-zinc-500 hover:text-accent dark:border-white/[.145]"
+            }`}
+          >
+            {filter.label}
+          </Link>
+        ))}
+      </nav>
       {products.length === 0 ? (
         <p className="card px-6 py-10 text-center text-zinc-500">Aún no hay productos.</p>
       ) : (
