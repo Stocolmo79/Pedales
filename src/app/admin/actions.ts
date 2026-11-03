@@ -52,5 +52,6 @@ export async function clearReservation(formData: FormData): Promise<void> {
 
   await setReservation(id, null);
   revalidatePath("/");
+  revalidatePath(`/${id}`);
   revalidatePath("/admin");
 }

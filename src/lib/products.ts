@@ -1,6 +1,6 @@
-// Products are stored as one JSON document in a PRIVATE R2 bucket (contains customer names/emails).
-import { GetObjectCommand, PutObjectCommand, S3ServiceException } from "@aws-sdk/client-s3";
-import { getS3Client } from "./storage";
+// Products are stored as one JSON document in the private R2 data bucket.
+import { isCategory, type Category } from "./categories";
+import { mutateJson, readJson } from "./json-store";
 
 export type Reservation = {
   name: string;
@@ -20,57 +20,35 @@ export type Product = {
   price: number;
   description: string;
   images: string[];
+  category: Category;
   reservedBy: Reservation | null;
   waitlist: WaitlistEntry[];
 };
 
-const DATA_BUCKET = process.env.S3_DATA_BUCKET ?? "product-data";
 const KEY = "products.json";
 
-async function load(): Promise<{ products: Product[]; etag: string | undefined }> {
-  try {
-    const res = await getS3Client().send(new GetObjectCommand({ Bucket: DATA_BUCKET, Key: KEY }));
-    const text = (await res.Body?.transformToString()) ?? "[]";
-    return { products: JSON.parse(text) as Product[], etag: res.ETag };
-  } catch (err) {
-    if (err instanceof S3ServiceException && err.name === "NoSuchKey") {
-      return { products: [], etag: undefined };
-    }
-    throw err;
-  }
+function mutate<T>(change: (products: Product[]) => T): Promise<T> {
+  return mutateJson<Product[], T>(KEY, [], change);
 }
 
-// Read-modify-write with an ETag precondition so concurrent writes (e.g. two reservations) aren't lost.
-async function mutate<T>(change: (products: Product[]) => T): Promise<T> {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const { products, etag } = await load();
-    const result = change(products);
-    try {
-      await getS3Client().send(
-        new PutObjectCommand({
-          Bucket: DATA_BUCKET,
-          Key: KEY,
-          Body: JSON.stringify(products, null, 2),
-          ContentType: "application/json",
-          ...(etag ? { IfMatch: etag } : { IfNoneMatch: "*" }),
-        }),
-      );
-      return result;
-    } catch (err) {
-      if (err instanceof S3ServiceException && err.$metadata.httpStatusCode === 412) continue;
-      throw err;
-    }
-  }
-  throw new Error("No se pudo guardar el producto. Inténtalo de nuevo.");
+// Products saved before categories existed get one guessed from the title.
+function guessCategory(title: string): Category {
+  return /\bvinilo\b|\bLP\b/i.test(title) ? "lp" : "pedal";
 }
 
 function normalize(product: Product): Product {
-  return { ...product, images: product.images ?? [], reservedBy: product.reservedBy ?? null, waitlist: product.waitlist ?? [] };
+  return {
+    ...product,
+    images: product.images ?? [],
+    category: isCategory(product.category) ? product.category : guessCategory(product.title),
+    reservedBy: product.reservedBy ?? null,
+    waitlist: product.waitlist ?? [],
+  };
 }
 
 export async function getProducts(): Promise<Product[]> {
-  const { products } = await load();
-  return products.map(normalize);
+  const { data } = await readJson<Product[]>(KEY, []);
+  return data.map(normalize);
 }
 
 export async function getProduct(id: string): Promise<Product | undefined> {
@@ -86,7 +64,7 @@ export async function addProduct(product: Product): Promise<void> {
 
 export async function updateProduct(
   id: string,
-  updates: Pick<Product, "title" | "price" | "description" | "images">,
+  updates: Pick<Product, "title" | "price" | "description" | "images" | "category">,
 ): Promise<Product | undefined> {
   return mutate((products) => {
     const product = products.find((p) => p.id === id);
