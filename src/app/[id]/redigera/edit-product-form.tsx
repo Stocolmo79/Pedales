@@ -5,6 +5,7 @@ import Image from "next/image";
 import { updateProduct } from "../../actions";
 import { ImageUploader } from "../../image-uploader";
 import type { Product } from "@/lib/products";
+import { CATEGORIES } from "@/lib/categories";
 
 export function EditProductForm({ product }: { product: Product }) {
   const [state, formAction, pending] = useActionState(
@@ -38,6 +39,22 @@ export function EditProductForm({ product }: { product: Product }) {
           required
           className="rounded-lg border border-black/[.08] bg-transparent px-3 py-2 outline-none focus:border-foreground dark:border-white/[.145]"
         />
+      </label>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium">Categoría</span>
+        <select
+          name="category"
+          defaultValue={product.category}
+          required
+          className="rounded-lg border border-black/[.08] bg-transparent px-3 py-2 outline-none focus:border-foreground dark:border-white/[.145] [&>option]:text-black"
+        >
+          {Object.entries(CATEGORIES).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
       </label>
 
       <label className="flex flex-col gap-1.5">
