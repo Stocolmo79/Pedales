@@ -1,11 +1,14 @@
 "use server";
 
 import { randomUUID } from "crypto";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { isAdminSession } from "@/lib/admin-auth";
 import { createSignedUploadUrl, deleteProductImage } from "@/lib/storage";
 import { sendEmail } from "@/lib/email";
+import { incrementStat, type ProductStats } from "@/lib/stats";
+import { LIKED_COOKIE, parseLikedCookie } from "@/lib/liked-cookie";
 import {
   addProduct,
   getProduct,
@@ -260,4 +263,31 @@ export async function moveProductOrder(
 
   await moveProduct(productId, direction);
   revalidatePath("/");
+}
+
+export async function toggleLike(
+  productId: string,
+): Promise<{ liked: boolean; stats: ProductStats } | null> {
+  if (!(await getProduct(productId))) return null;
+
+  const cookieStore = await cookies();
+  const liked = parseLikedCookie(cookieStore.get(LIKED_COOKIE)?.value);
+  const nowLiked = !liked.has(productId);
+  if (nowLiked) liked.add(productId);
+  else liked.delete(productId);
+
+  const stats = await incrementStat(productId, "likes", nowLiked ? 1 : -1);
+  cookieStore.set(LIKED_COOKIE, [...liked].join(","), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 60 * 24 * 365,
+    path: "/",
+  });
+  return { liked: nowLiked, stats };
+}
+
+export async function recordView(productId: string): Promise<ProductStats | null> {
+  if (!(await getProduct(productId))) return null;
+  return incrementStat(productId, "views", 1).catch(() => null);
 }
