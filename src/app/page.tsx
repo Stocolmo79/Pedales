@@ -1,15 +1,10 @@
+import Image from "next/image";
 import Link from "next/link";
-import { cookies } from "next/headers";
 import { Suspense } from "react";
 import { isAdminSession } from "@/lib/admin-auth";
-import { LIKED_COOKIE, parseLikedCookie } from "@/lib/liked-cookie";
 import { getProducts } from "@/lib/products";
 import { getStats } from "@/lib/stats";
-import { ProductEngagement } from "./product-engagement";
-import { ProductGallery } from "./product-gallery";
 import { ProductOrderButtons } from "./product-order-buttons";
-import { ReserveForm } from "./reserve-form";
-import { WaitlistForm } from "./waitlist-form";
 
 export default function Home() {
   return (
@@ -33,13 +28,11 @@ export default function Home() {
 }
 
 async function ProductsSection() {
-  const [isAdmin, products, stats, cookieStore] = await Promise.all([
+  const [isAdmin, products, stats] = await Promise.all([
     isAdminSession(),
     getProducts(),
     getStats().catch((): Awaited<ReturnType<typeof getStats>> => ({})),
-    cookies(),
   ]);
-  const likedIds = parseLikedCookie(cookieStore.get(LIKED_COOKIE)?.value);
 
   return (
     <>
@@ -54,54 +47,51 @@ async function ProductsSection() {
       {products.length === 0 ? (
         <p className="card px-6 py-10 text-center text-zinc-500">Aún no hay productos.</p>
       ) : (
-        <ul className="flex flex-col gap-6">
+        <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {products
             .slice()
             .reverse()
             .map((product, index, reversedProducts) => (
-              <li key={product.id} className="card p-5 sm:p-6">
-                <ProductGallery images={product.images} title={product.title} />
-                <div className="mt-4 flex items-start justify-between gap-4">
-                  <div>
-                    <h2 className="text-xl font-semibold tracking-tight">{product.title}</h2>
-                    <p className="mt-1 text-lg font-semibold text-accent">${product.price}</p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {isAdmin && (
-                      <ProductOrderButtons
-                        productId={product.id}
-                        isFirst={index === 0}
-                        isLast={index === reversedProducts.length - 1}
+              <li key={product.id} className="card flex flex-col overflow-hidden">
+                <Link href={`/${product.id}`} className="group flex flex-1 flex-col">
+                  <div className="relative aspect-square w-full overflow-hidden bg-zinc-100 dark:bg-zinc-800">
+                    {product.images[0] ? (
+                      <Image
+                        src={product.images[0]}
+                        alt={product.title}
+                        fill
+                        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                        className="object-cover transition-transform duration-300 group-hover:scale-105"
                       />
+                    ) : (
+                      <span className="flex h-full items-center justify-center text-xs text-zinc-400">
+                        Sin imagen
+                      </span>
                     )}
                     {product.reservedBy && (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                      <span className="absolute top-2 left-2 rounded-full bg-amber-500 px-2 py-0.5 text-[11px] font-semibold text-white">
                         Reservado
                       </span>
                     )}
                   </div>
-                </div>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-400">
-                  {product.description}
-                </p>
-                <ProductEngagement
-                  productId={product.id}
-                  initialStats={stats[product.id] ?? { likes: 0, views: 0 }}
-                  initialLiked={likedIds.has(product.id)}
-                />
-                {!product.reservedBy ? (
-                  <ReserveForm productId={product.id} />
-                ) : (
-                  <WaitlistForm productId={product.id} />
-                )}
+                  <div className="flex flex-1 flex-col gap-1 p-3">
+                    <h2 className="line-clamp-2 text-sm font-semibold leading-snug group-hover:text-accent">
+                      {product.title}
+                    </h2>
+                    <div className="mt-auto flex items-center justify-between pt-1 text-sm">
+                      <span className="font-semibold text-accent">${product.price}</span>
+                      <span className="text-xs text-zinc-500">♥ {stats[product.id]?.likes ?? 0}</span>
+                    </div>
+                  </div>
+                </Link>
                 {isAdmin && (
-                  <Link
-                    href={`/${product.id}/redigera`}
-                    className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-zinc-500 transition-colors hover:text-accent"
-                  >
-                    Editar producto
-                  </Link>
+                  <div className="flex justify-center border-t border-black/[.06] p-2 dark:border-white/[.08]">
+                    <ProductOrderButtons
+                      productId={product.id}
+                      isFirst={index === 0}
+                      isLast={index === reversedProducts.length - 1}
+                    />
+                  </div>
                 )}
               </li>
             ))}
