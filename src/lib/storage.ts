@@ -11,7 +11,7 @@ const BUCKET = process.env.S3_BUCKET ?? "product-images";
 // S3_ENDPOINT; images are served from S3_PUBLIC_URL_BASE (r2.dev or custom domain).
 let client: S3Client | undefined;
 
-function getS3Client(): S3Client {
+export function getS3Client(): S3Client {
   if (client) return client;
 
   const endpoint = process.env.S3_ENDPOINT;
