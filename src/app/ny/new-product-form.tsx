@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { createProduct } from "../actions";
 import { ImageUploader } from "../image-uploader";
+import { CATEGORIES } from "@/lib/categories";
 
 const initialState = undefined;
 
@@ -28,6 +29,22 @@ export function NewProductForm() {
           required
           className="rounded-lg border border-black/[.08] bg-transparent px-3 py-2 outline-none focus:border-foreground dark:border-white/[.145]"
         />
+      </label>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium">Categoría</span>
+        <select
+          name="category"
+          defaultValue="pedal"
+          required
+          className="rounded-lg border border-black/[.08] bg-transparent px-3 py-2 outline-none focus:border-foreground dark:border-white/[.145] [&>option]:text-black"
+        >
+          {Object.entries(CATEGORIES).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
       </label>
 
       <label className="flex flex-col gap-1.5">
