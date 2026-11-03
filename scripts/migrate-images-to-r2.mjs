@@ -1,15 +1,20 @@
 // One-off: copies product images from Supabase Storage to R2 and rewrites the URLs in the products table.
 // Usage: node --env-file=.env.local scripts/migrate-images-to-r2.mjs [--dry-run]
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { createClient } from "@supabase/supabase-js";
 
 const dryRun = process.argv.includes("--dry-run");
 const bucket = process.env.S3_BUCKET ?? "product-images";
 const publicBase = process.env.S3_PUBLIC_URL_BASE.replace(/\/$/, "");
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false },
-});
+// Plain REST instead of supabase-js, which requires Node 22+ (native WebSocket).
+const restUrl = `${process.env.SUPABASE_URL.replace(/\/$/, "")}/rest/v1/products`;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseHeaders = {
+  apikey: supabaseKey,
+  Authorization: `Bearer ${supabaseKey}`,
+  "Content-Type": "application/json",
+};
+
 const s3 = new S3Client({
   endpoint: process.env.S3_ENDPOINT,
   region: process.env.S3_REGION ?? "auto",
@@ -22,8 +27,9 @@ const s3 = new S3Client({
 
 const SUPABASE_MARKER = "/storage/v1/object/public/";
 
-const { data: products, error } = await supabase.from("products").select("id, title, images");
-if (error) throw new Error(error.message);
+const listRes = await fetch(`${restUrl}?select=id,title,images`, { headers: supabaseHeaders });
+if (!listRes.ok) throw new Error(`Supabase ${listRes.status}: ${await listRes.text()}`);
+const products = await listRes.json();
 
 let copied = 0;
 let failed = 0;
@@ -72,11 +78,12 @@ for (const product of products) {
   }
 
   if (changed && !dryRun) {
-    const { error: updateError } = await supabase
-      .from("products")
-      .update({ images: newImages })
-      .eq("id", product.id);
-    if (updateError) throw new Error(`${product.title}: ${updateError.message}`);
+    const updateRes = await fetch(`${restUrl}?id=eq.${encodeURIComponent(product.id)}`, {
+      method: "PATCH",
+      headers: supabaseHeaders,
+      body: JSON.stringify({ images: newImages }),
+    });
+    if (!updateRes.ok) throw new Error(`${product.title}: ${updateRes.status} ${await updateRes.text()}`);
   }
   if (changed) console.log(`${dryRun ? "[dry-run] " : ""}${product.title}: ${newImages.length} bilder`);
 }
