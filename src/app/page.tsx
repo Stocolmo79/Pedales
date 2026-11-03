@@ -114,7 +114,8 @@ async function ProductsSection({ searchParams }: { searchParams: SearchParams })
                     </div>
                   </div>
                 </Link>
-                {isAdmin && (
+                {/* Reordering swaps with neighbours in the full list, so only offer it unfiltered. */}
+                {isAdmin && !category && (
                   <div className="flex justify-center border-t border-black/[.06] p-2 dark:border-white/[.08]">
                     <ProductOrderButtons
                       productId={product.id}
