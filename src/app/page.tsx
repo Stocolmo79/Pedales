@@ -34,10 +34,12 @@ export default function Home() {
 
 async function ProductsSection() {
   const [isAdmin, products, stats, cookieStore] = await Promise.all([
-    isAdminSession(), 
+    isAdminSession(),
     getProducts(),
-    getStats().catch(() => ({})),
-    cookies(),]);
+    getStats().catch((): Awaited<ReturnType<typeof getStats>> => ({})),
+    cookies(),
+  ]);
+  const likedIds = parseLikedCookie(cookieStore.get(LIKED_COOKIE)?.value);
 
   return (
     <>
@@ -83,7 +85,7 @@ async function ProductsSection() {
                 <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-400">
                   {product.description}
                 </p>
-                 <ProductEngagement
+                <ProductEngagement
                   productId={product.id}
                   initialStats={stats[product.id] ?? { likes: 0, views: 0 }}
                   initialLiked={likedIds.has(product.id)}
