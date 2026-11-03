@@ -1,7 +1,5 @@
-// Products are stored as one JSON document in a PRIVATE R2 bucket (contains customer names/emails).
-import { GetObjectCommand, PutObjectCommand, S3ServiceException } from "@aws-sdk/client-s3";
-import { connection } from "next/server";
-import { getS3Client } from "./storage";
+// Products are stored as one JSON document in the private R2 data bucket.
+import { mutateJson, readJson } from "./json-store";
 
 export type Reservation = {
   name: string;
@@ -25,46 +23,10 @@ export type Product = {
   waitlist: WaitlistEntry[];
 };
 
-const DATA_BUCKET = process.env.S3_DATA_BUCKET ?? "product-data";
 const KEY = "products.json";
 
-async function load(): Promise<{ products: Product[]; etag: string | undefined }> {
-  // Product data is live; also the AWS SDK uses crypto.randomUUID(), which can't run during prerender.
-  await connection();
-  try {
-    const res = await getS3Client().send(new GetObjectCommand({ Bucket: DATA_BUCKET, Key: KEY }));
-    const text = (await res.Body?.transformToString()) ?? "[]";
-    return { products: JSON.parse(text) as Product[], etag: res.ETag };
-  } catch (err) {
-    if (err instanceof S3ServiceException && err.name === "NoSuchKey") {
-      return { products: [], etag: undefined };
-    }
-    throw err;
-  }
-}
-
-// Read-modify-write with an ETag precondition so concurrent writes (e.g. two reservations) aren't lost.
-async function mutate<T>(change: (products: Product[]) => T): Promise<T> {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const { products, etag } = await load();
-    const result = change(products);
-    try {
-      await getS3Client().send(
-        new PutObjectCommand({
-          Bucket: DATA_BUCKET,
-          Key: KEY,
-          Body: JSON.stringify(products, null, 2),
-          ContentType: "application/json",
-          ...(etag ? { IfMatch: etag } : { IfNoneMatch: "*" }),
-        }),
-      );
-      return result;
-    } catch (err) {
-      if (err instanceof S3ServiceException && err.$metadata.httpStatusCode === 412) continue;
-      throw err;
-    }
-  }
-  throw new Error("No se pudo guardar el producto. Inténtalo de nuevo.");
+function mutate<T>(change: (products: Product[]) => T): Promise<T> {
+  return mutateJson<Product[], T>(KEY, [], change);
 }
 
 function normalize(product: Product): Product {
@@ -72,8 +34,8 @@ function normalize(product: Product): Product {
 }
 
 export async function getProducts(): Promise<Product[]> {
-  const { products } = await load();
-  return products.map(normalize);
+  const { data } = await readJson<Product[]>(KEY, []);
+  return data.map(normalize);
 }
 
 export async function getProduct(id: string): Promise<Product | undefined> {
